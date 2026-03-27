@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, User, Trash2, Eye, Edit, Share2, X, MessageCircle, Mail, Copy, Check } from 'lucide-react';
+import { ArrowLeft, User, Trash2, Eye, Edit, Share2, Download, X, MessageCircle, Mail, Copy, Check } from 'lucide-react';
 
 interface ResumeData {
   name: string;
@@ -40,6 +40,7 @@ export default function ListPage() {
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [shareTarget, setShareTarget] = useState<ResumeItem | null>(null);
+  const [downloadTarget, setDownloadTarget] = useState<ResumeItem | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -122,6 +123,22 @@ export default function ListPage() {
 
   const handleShare = (resume: ResumeItem) => {
     setShareTarget(resume);
+  };
+
+  const handleDownload = (resume: ResumeItem) => {
+    setDownloadTarget(resume);
+  };
+
+  const handleDownloadImage = async () => {
+    if (!downloadTarget) return;
+    
+    localStorage.setItem('resumeFormData', JSON.stringify(downloadTarget.data));
+    if (downloadTarget.photo) {
+      localStorage.setItem('resumePhoto', downloadTarget.photo);
+    }
+    
+    router.push('/preview');
+    setDownloadTarget(null);
   };
 
   const handleShareKakao = async () => {
@@ -304,7 +321,8 @@ export default function ListPage() {
                 </div>
 
                 <div style={{
-                  display: 'flex',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(5, 1fr)',
                   gap: '8px',
                   marginTop: '16px',
                   paddingTop: '16px',
@@ -313,17 +331,16 @@ export default function ListPage() {
                   <button
                     onClick={() => handleView(resume)}
                     style={{
-                      flex: 1,
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
+                      gap: '4px',
                       backgroundColor: '#EFF6FF',
                       color: '#3B82F6',
                       border: 'none',
                       borderRadius: '10px',
-                      padding: '12px',
-                      fontSize: '14px',
+                      padding: '10px 4px',
+                      fontSize: '12px',
                       fontWeight: '600',
                       cursor: 'pointer'
                     }}
@@ -335,17 +352,16 @@ export default function ListPage() {
                   <button
                     onClick={() => handleEdit(resume)}
                     style={{
-                      flex: 1,
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
+                      gap: '4px',
                       backgroundColor: '#F0FDF4',
                       color: '#22C55E',
                       border: 'none',
                       borderRadius: '10px',
-                      padding: '12px',
-                      fontSize: '14px',
+                      padding: '10px 4px',
+                      fontSize: '12px',
                       fontWeight: '600',
                       cursor: 'pointer'
                     }}
@@ -357,17 +373,16 @@ export default function ListPage() {
                   <button
                     onClick={() => handleShare(resume)}
                     style={{
-                      flex: 1,
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
+                      gap: '4px',
                       backgroundColor: '#FDF4FF',
                       color: '#A855F7',
                       border: 'none',
                       borderRadius: '10px',
-                      padding: '12px',
-                      fontSize: '14px',
+                      padding: '10px 4px',
+                      fontSize: '12px',
                       fontWeight: '600',
                       cursor: 'pointer'
                     }}
@@ -375,22 +390,47 @@ export default function ListPage() {
                     <Share2 size={18} />
                     공유
                   </button>
+
+                  <button
+                    onClick={() => handleDownload(resume)}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '4px',
+                      backgroundColor: '#FFF7ED',
+                      color: '#F97316',
+                      border: 'none',
+                      borderRadius: '10px',
+                      padding: '10px 4px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Download size={18} />
+                    저장
+                  </button>
                   
                   <button
                     onClick={() => setDeleteTarget(resume.id)}
                     style={{
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center',
+                      gap: '4px',
                       backgroundColor: '#FEF2F2',
                       color: '#EF4444',
                       border: 'none',
                       borderRadius: '10px',
-                      padding: '12px',
+                      padding: '10px 4px',
+                      fontSize: '12px',
+                      fontWeight: '600',
                       cursor: 'pointer'
                     }}
                   >
                     <Trash2 size={18} />
+                    삭제
                   </button>
                 </div>
               </div>
@@ -459,6 +499,73 @@ export default function ListPage() {
                   }}
                 >
                   삭제
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {downloadTarget && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            zIndex: 1000
+          }}>
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '20px',
+              padding: '28px',
+              maxWidth: '320px',
+              width: '100%',
+              textAlign: 'center'
+            }}>
+              <Download size={40} color="#F97316" style={{ marginBottom: '16px' }} />
+              <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '12px', color: '#1F2937' }}>
+                이력서 저장
+              </h3>
+              <p style={{ fontSize: '16px', color: '#6B7280', marginBottom: '24px' }}>
+                미리보기 화면에서<br />이미지 또는 PDF로 저장할 수 있어요
+              </p>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setDownloadTarget(null)}
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#F3F4F6',
+                    color: '#374151',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '14px',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleDownloadImage}
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#F97316',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '14px',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  이동하기
                 </button>
               </div>
             </div>

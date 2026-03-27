@@ -11,15 +11,15 @@ interface ResumeData {
   email: string;
   address: string;
   introduction: string;
-  experiences: Array<{
-    id: string;
+  experiences?: Array<{
+    id?: string;
     company: string;
     position: string;
     period: string;
     duties: string;
   }>;
-  education: Array<{
-    id: string;
+  education?: Array<{
+    id?: string;
     school: string;
     major: string;
     period: string;
@@ -48,30 +48,38 @@ export default function PreviewPage() {
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(templates[0]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const savedData = localStorage.getItem('resumeFormData');
-    const savedPhoto = localStorage.getItem('resumePhoto');
-    const savedTemplate = localStorage.getItem('selectedTemplate');
+    const loadData = () => {
+      const savedData = localStorage.getItem('resumeFormData');
+      const savedPhoto = localStorage.getItem('resumePhoto');
+      const savedTemplate = localStorage.getItem('selectedTemplate');
 
-    if (savedData) {
-      try {
-        setData(JSON.parse(savedData));
-      } catch (e) {
-        console.error('데이터 로드 오류:', e);
+      if (savedData) {
+        try {
+          const parsed = JSON.parse(savedData);
+          setData(parsed);
+        } catch (e) {
+          console.error('데이터 로드 오류:', e);
+        }
       }
-    }
 
-    if (savedPhoto) {
-      setPhoto(savedPhoto);
-    }
-
-    if (savedTemplate) {
-      const template = templates.find(t => t.id === savedTemplate);
-      if (template) {
-        setSelectedTemplate(template);
+      if (savedPhoto) {
+        setPhoto(savedPhoto);
       }
-    }
+
+      if (savedTemplate) {
+        const template = templates.find(t => t.id === savedTemplate);
+        if (template) {
+          setSelectedTemplate(template);
+        }
+      }
+      
+      setIsLoading(false);
+    };
+
+    loadData();
   }, []);
 
   const handleTemplateSelect = (template: typeof templates[0]) => {
@@ -84,9 +92,9 @@ export default function PreviewPage() {
     if (!data) return '';
     
     let text = `[이력서]\n\n`;
-    text += `이름: ${data.name}\n`;
+    text += `이름: ${data.name || ''}\n`;
     if (data.birthDate) text += `생년월일: ${data.birthDate}\n`;
-    text += `전화번호: ${data.phone}\n`;
+    if (data.phone) text += `전화번호: ${data.phone}\n`;
     if (data.email) text += `이메일: ${data.email}\n`;
     if (data.address) text += `주소: ${data.address}\n`;
     
@@ -114,7 +122,7 @@ export default function PreviewPage() {
 
   const generateQRCode = async () => {
     try {
-      const QRCode = (await import('qrcode')).default;
+      const QRCode = await import('qrcode');
       const text = generateShareText();
       const url = await QRCode.toDataURL(text, {
         width: 256,
@@ -207,6 +215,43 @@ export default function PreviewPage() {
     setIsDownloading(false);
   };
 
+  const handleShareWithImage = async () => {
+    if (!resumeRef.current) return;
+
+    try {
+      const html2canvasModule = await import('html2canvas');
+      const html2canvas = html2canvasModule.default;
+
+      const canvas = await html2canvas(resumeRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false
+      });
+
+      canvas.toBlob(async (blob) => {
+        if (blob && navigator.share && navigator.canShare) {
+          const file = new File([blob], `${data?.name || '이력서'}_이력서.png`, { type: 'image/png' });
+          
+          if (navigator.canShare({ files: [file] })) {
+            try {
+              await navigator.share({
+                title: `${data?.name || ''} 이력서`,
+                files: [file]
+              });
+              return;
+            } catch (e) {
+              console.log('파일 공유 실패, 텍스트로 전환');
+            }
+          }
+        }
+        setShowShareModal(true);
+      }, 'image/png');
+    } catch (e) {
+      setShowShareModal(true);
+    }
+  };
+
   const handleShareKakao = async () => {
     const text = generateShareText();
     
@@ -253,25 +298,33 @@ export default function PreviewPage() {
     }
   };
 
-  const handleNativeShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `${data?.name || ''} 이력서`,
-          text: generateShareText()
-        });
-      } catch (e) {
-        setShowShareModal(true);
-      }
-    } else {
-      setShowShareModal(true);
-    }
-  };
+  if (isLoading) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ fontSize: '18px', color: '#6B7280' }}>이력서를 불러오는 중...</p>
+      </div>
+    );
+  }
 
   if (!data) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ fontSize: '18px', color: '#6B7280' }}>이력서 데이터를 불러오는 중...</p>
+      <div style={{ minHeight: '100vh', backgroundColor: '#F3F4F6', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <p style={{ fontSize: '18px', color: '#6B7280', marginBottom: '20px' }}>이력서 데이터가 없습니다.</p>
+        <button
+          onClick={() => router.push('/write')}
+          style={{
+            backgroundColor: '#3B82F6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '14px 28px',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer'
+          }}
+        >
+          이력서 작성하기
+        </button>
       </div>
     );
   }
@@ -355,7 +408,9 @@ export default function PreviewPage() {
                 {data.birthDate && (
                   <p style={{ fontSize: '15px', color: '#4B5563' }}>생년월일: {data.birthDate}</p>
                 )}
-                <p style={{ fontSize: '15px', color: '#4B5563' }}>전화번호: {data.phone}</p>
+                {data.phone && (
+                  <p style={{ fontSize: '15px', color: '#4B5563' }}>전화번호: {data.phone}</p>
+                )}
                 {data.email && (
                   <p style={{ fontSize: '15px', color: '#4B5563' }}>이메일: {data.email}</p>
                 )}
@@ -409,16 +464,18 @@ export default function PreviewPage() {
                       <p style={{ fontSize: '16px', fontWeight: '600', color: '#1F2937' }}>{exp.company}</p>
                       <p style={{ fontSize: '14px', color: '#6B7280' }}>{exp.position}</p>
                     </div>
-                    <span style={{
-                      backgroundColor: selectedTemplate.accent,
-                      color: selectedTemplate.primary,
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      fontWeight: '500'
-                    }}>
-                      {exp.period}
-                    </span>
+                    {exp.period && (
+                      <span style={{
+                        backgroundColor: selectedTemplate.accent,
+                        color: selectedTemplate.primary,
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: '500'
+                      }}>
+                        {exp.period}
+                      </span>
+                    )}
                   </div>
                   {exp.duties && (
                     <p style={{ fontSize: '14px', color: '#4B5563', marginTop: '8px' }}>{exp.duties}</p>
@@ -453,16 +510,18 @@ export default function PreviewPage() {
                       <p style={{ fontSize: '16px', fontWeight: '600', color: '#1F2937' }}>{edu.school}</p>
                       <p style={{ fontSize: '14px', color: '#6B7280' }}>{edu.major} {edu.degree}</p>
                     </div>
-                    <span style={{
-                      backgroundColor: selectedTemplate.accent,
-                      color: selectedTemplate.primary,
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      fontWeight: '500'
-                    }}>
-                      {edu.period}
-                    </span>
+                    {edu.period && (
+                      <span style={{
+                        backgroundColor: selectedTemplate.accent,
+                        color: selectedTemplate.primary,
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: '500'
+                      }}>
+                        {edu.period}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -480,7 +539,7 @@ export default function PreviewPage() {
         padding: '16px 20px',
         boxShadow: '0 -4px 12px rgba(0,0,0,0.1)'
       }}>
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
           <button
             onClick={() => router.push('/write')}
             style={{
@@ -488,39 +547,39 @@ export default function PreviewPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '6px',
               backgroundColor: '#F3F4F6',
               color: '#374151',
               border: 'none',
               borderRadius: '12px',
-              padding: '14px',
-              fontSize: '16px',
+              padding: '12px',
+              fontSize: '15px',
               fontWeight: '600',
               cursor: 'pointer'
             }}
           >
-            <Edit size={20} />
+            <Edit size={18} />
             수정
           </button>
           <button
-            onClick={handleNativeShare}
+            onClick={handleShareWithImage}
             style={{
               flex: 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '6px',
               backgroundColor: selectedTemplate.primary,
               color: 'white',
               border: 'none',
               borderRadius: '12px',
-              padding: '14px',
-              fontSize: '16px',
+              padding: '12px',
+              fontSize: '15px',
               fontWeight: '600',
               cursor: 'pointer'
             }}
           >
-            <Share2 size={20} />
+            <Share2 size={18} />
             공유
           </button>
           <button
@@ -530,22 +589,22 @@ export default function PreviewPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '6px',
               backgroundColor: '#8B5CF6',
               color: 'white',
               border: 'none',
               borderRadius: '12px',
-              padding: '14px',
-              fontSize: '16px',
+              padding: '12px',
+              fontSize: '15px',
               fontWeight: '600',
               cursor: 'pointer'
             }}
           >
-            <QrCode size={20} />
+            <QrCode size={18} />
             QR
           </button>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={handleDownloadImage}
             disabled={isDownloading}
@@ -554,19 +613,19 @@ export default function PreviewPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '6px',
               backgroundColor: '#22C55E',
               color: 'white',
               border: 'none',
               borderRadius: '12px',
-              padding: '14px',
-              fontSize: '16px',
+              padding: '12px',
+              fontSize: '15px',
               fontWeight: '600',
               cursor: isDownloading ? 'not-allowed' : 'pointer',
               opacity: isDownloading ? 0.7 : 1
             }}
           >
-            <Download size={20} />
+            <Download size={18} />
             이미지
           </button>
           <button
@@ -577,19 +636,19 @@ export default function PreviewPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '6px',
               backgroundColor: '#3B82F6',
               color: 'white',
               border: 'none',
               borderRadius: '12px',
-              padding: '14px',
-              fontSize: '16px',
+              padding: '12px',
+              fontSize: '15px',
               fontWeight: '600',
               cursor: isDownloading ? 'not-allowed' : 'pointer',
               opacity: isDownloading ? 0.7 : 1
             }}
           >
-            <Download size={20} />
+            <Download size={18} />
             PDF
           </button>
         </div>

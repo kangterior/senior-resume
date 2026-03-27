@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Camera, User, Plus, Trash2, Save, Eye, Mic, MicOff } from 'lucide-react';
+import { ArrowLeft, Camera, User, Plus, Trash2, Save, Eye, Mic, MicOff, X } from 'lucide-react';
 
 interface Experience {
   id: string;
@@ -47,6 +47,9 @@ export default function WritePage() {
   
   const [isListening, setIsListening] = useState(false);
   const [activeField, setActiveField] = useState<string | null>(null);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [voiceText, setVoiceText] = useState('');
+  const [voiceStatus, setVoiceStatus] = useState('');
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
@@ -98,34 +101,6 @@ export default function WritePage() {
       }
     }
 
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = false;
-        recognitionRef.current.interimResults = false;
-        recognitionRef.current.lang = 'ko-KR';
-
-        recognitionRef.current.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          if (activeField) {
-            handleVoiceInput(activeField, transcript);
-          }
-          setIsListening(false);
-          setActiveField(null);
-        };
-
-        recognitionRef.current.onerror = () => {
-          setIsListening(false);
-          setActiveField(null);
-        };
-
-        recognitionRef.current.onend = () => {
-          setIsListening(false);
-        };
-      }
-    }
-
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.abort();
@@ -145,38 +120,129 @@ export default function WritePage() {
     return () => window.removeEventListener('focus', checkPhoto);
   }, [photo]);
 
-  const handleVoiceInput = (field: string, transcript: string) => {
-    if (field.startsWith('exp-')) {
-      const parts = field.split('-');
-      const expId = `exp-${parts[1]}`;
-      const expField = parts[2] as keyof Experience;
-      updateExperience(expId, expField, transcript);
-    } else if (field.startsWith('edu-')) {
-      const parts = field.split('-');
-      const eduId = `edu-${parts[1]}`;
-      const eduField = parts[2] as keyof Education;
-      updateEducation(eduId, eduField, transcript);
-    } else {
-      setFormData(prev => ({ ...prev, [field]: prev[field as keyof FormData] + transcript }));
+  const initSpeechRecognition = () => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition && !recognitionRef.current) {
+        recognitionRef.current = new SpeechRecognition();
+        recognitionRef.current.continuous = false;
+        recognitionRef.current.interimResults = true;
+        recognitionRef.current.lang = 'ko-KR';
+
+        recognitionRef.current.onresult = (event: any) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript;
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+
+          if (finalTranscript) {
+            setVoiceText(finalTranscript);
+            setVoiceStatus('완료! 확인 버튼을 눌러주세요');
+          } else if (interimTranscript) {
+            setVoiceText(interimTranscript);
+            setVoiceStatus('듣는 중...');
+          }
+        };
+
+        recognitionRef.current.onerror = (event: any) => {
+          console.error('음성 인식 오류:', event.error);
+          if (event.error === 'no-speech') {
+            setVoiceStatus('음성이 감지되지 않았어요. 다시 시도해주세요.');
+          } else if (event.error === 'not-allowed') {
+            setVoiceStatus('마이크 권한이 필요해요.');
+          } else {
+            setVoiceStatus('오류가 발생했어요. 다시 시도해주세요.');
+          }
+          setIsListening(false);
+        };
+
+        recognitionRef.current.onend = () => {
+          setIsListening(false);
+          if (!voiceText) {
+            setVoiceStatus('음성이 감지되지 않았어요. 다시 시도해주세요.');
+          }
+        };
+      }
+      return !!SpeechRecognition;
     }
+    return false;
+  };
+
+  const applyVoiceInput = () => {
+    if (activeField && voiceText) {
+      if (activeField.startsWith('exp-')) {
+        const parts = activeField.split('-');
+        const expId = `exp-${parts[1]}`;
+        const expField = parts[2] as keyof Experience;
+        setExperiences(prev => prev.map(exp => 
+          exp.id === expId ? { ...exp, [expField]: exp[expField] + voiceText } : exp
+        ));
+      } else if (activeField.startsWith('edu-')) {
+        const parts = activeField.split('-');
+        const eduId = `edu-${parts[1]}`;
+        const eduField = parts[2] as keyof Education;
+        setEducation(prev => prev.map(edu => 
+          edu.id === eduId ? { ...edu, [eduField]: edu[eduField] + voiceText } : edu
+        ));
+      } else {
+        setFormData(prev => ({ 
+          ...prev, 
+          [activeField]: prev[activeField as keyof FormData] + voiceText 
+        }));
+      }
+    }
+    closeVoiceModal();
+  };
+
+  const closeVoiceModal = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.abort();
+    }
+    setShowVoiceModal(false);
+    setIsListening(false);
+    setActiveField(null);
+    setVoiceText('');
+    setVoiceStatus('');
   };
 
   const startListening = (field: string) => {
-    if (!recognitionRef.current) {
+    const supported = initSpeechRecognition();
+    
+    if (!supported) {
       alert('이 브라우저에서는 음성 입력을 지원하지 않습니다.');
       return;
     }
 
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-      setActiveField(null);
-      return;
-    }
-
     setActiveField(field);
-    setIsListening(true);
-    recognitionRef.current.start();
+    setVoiceText('');
+    setVoiceStatus('마이크 버튼을 누르고 말씀해주세요');
+    setShowVoiceModal(true);
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      setVoiceStatus('음성 인식이 중지되었어요');
+    } else {
+      setVoiceText('');
+      setVoiceStatus('듣고 있어요... 말씀해주세요');
+      setIsListening(true);
+      try {
+        recognitionRef.current?.start();
+      } catch (e) {
+        console.error('음성 인식 시작 오류:', e);
+        setVoiceStatus('음성 인식을 시작할 수 없어요');
+        setIsListening(false);
+      }
+    }
   };
 
   const handleInputChange = (field: keyof FormData, value: string) => {
@@ -371,7 +437,7 @@ export default function WritePage() {
     <button
       onClick={() => startListening(field)}
       style={{
-        backgroundColor: isListening && activeField === field ? '#EF4444' : '#F3F4F6',
+        backgroundColor: '#F3F4F6',
         border: 'none',
         borderRadius: '8px',
         padding: '10px',
@@ -381,11 +447,7 @@ export default function WritePage() {
         justifyContent: 'center'
       }}
     >
-      {isListening && activeField === field ? (
-        <MicOff size={20} color="white" />
-      ) : (
-        <Mic size={20} color="#6B7280" />
-      )}
+      <Mic size={20} color="#6B7280" />
     </button>
   );
 
@@ -411,29 +473,6 @@ export default function WritePage() {
         <h1 style={{ color: 'white', fontSize: '20px', fontWeight: 'bold', marginLeft: '12px' }}>
           이력서 작성
         </h1>
-        {isListening && (
-          <div style={{
-            marginLeft: 'auto',
-            backgroundColor: '#EF4444',
-            color: 'white',
-            padding: '6px 12px',
-            borderRadius: '20px',
-            fontSize: '14px',
-            fontWeight: '600',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}>
-            <div style={{
-              width: '8px',
-              height: '8px',
-              backgroundColor: 'white',
-              borderRadius: '50%',
-              animation: 'pulse 1s infinite'
-            }} />
-            듣는 중...
-          </div>
-        )}
       </div>
 
       <div style={{
@@ -504,7 +543,7 @@ export default function WritePage() {
             <span style={{ marginLeft: '8px', fontSize: '18px', fontWeight: '600', color: '#1F2937' }}>
               기본 정보
             </span>
-            <span style={{ marginLeft: 'auto', fontSize: '13px', color: '#9CA3AF' }}>
+            <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#3B82F6', backgroundColor: '#EFF6FF', padding: '4px 8px', borderRadius: '6px' }}>
               마이크로 입력 가능
             </span>
           </div>
@@ -940,12 +979,133 @@ export default function WritePage() {
         </button>
       </div>
 
-      <style jsx>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-      `}</style>
+      {showVoiceModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '24px',
+            padding: '32px',
+            width: '100%',
+            maxWidth: '340px',
+            textAlign: 'center'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+              <button
+                onClick={closeVoiceModal}
+                style={{
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                <X size={24} color="#6B7280" />
+              </button>
+            </div>
+
+            <div style={{
+              width: '100px',
+              height: '100px',
+              backgroundColor: isListening ? '#EF4444' : '#3B82F6',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 24px auto',
+              cursor: 'pointer',
+              transition: 'all 0.3s',
+              boxShadow: isListening ? '0 0 0 8px rgba(239,68,68,0.2)' : 'none'
+            }}
+              onClick={toggleListening}
+            >
+              {isListening ? (
+                <MicOff size={48} color="white" />
+              ) : (
+                <Mic size={48} color="white" />
+              )}
+            </div>
+
+            <p style={{ 
+              fontSize: '18px', 
+              fontWeight: '600', 
+              color: '#1F2937', 
+              marginBottom: '12px' 
+            }}>
+              {isListening ? '듣고 있어요...' : '음성 입력'}
+            </p>
+            
+            <p style={{ 
+              fontSize: '14px', 
+              color: '#6B7280', 
+              marginBottom: '20px',
+              minHeight: '20px'
+            }}>
+              {voiceStatus}
+            </p>
+
+            {voiceText && (
+              <div style={{
+                backgroundColor: '#F3F4F6',
+                borderRadius: '12px',
+                padding: '16px',
+                marginBottom: '20px',
+                textAlign: 'left'
+              }}>
+                <p style={{ fontSize: '14px', color: '#6B7280', marginBottom: '4px' }}>인식된 텍스트</p>
+                <p style={{ fontSize: '16px', color: '#1F2937', fontWeight: '500' }}>{voiceText}</p>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={closeVoiceModal}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#F3F4F6',
+                  color: '#374151',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                취소
+              </button>
+              <button
+                onClick={applyVoiceInput}
+                disabled={!voiceText}
+                style={{
+                  flex: 1,
+                  backgroundColor: voiceText ? '#3B82F6' : '#D1D5DB',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: voiceText ? 'pointer' : 'not-allowed'
+                }}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
