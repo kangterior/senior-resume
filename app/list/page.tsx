@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, User, Trash2, Eye, Edit, Share2, Download, X, MessageCircle, Mail, Copy, Check, FileText, Image } from 'lucide-react';
+import { ArrowLeft, User, Trash2, Eye, Edit, Share2, Download, X, FileText, Image } from 'lucide-react';
 
 interface ResumeData {
   name: string;
@@ -39,10 +39,9 @@ export default function ListPage() {
   const router = useRouter();
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [shareTarget, setShareTarget] = useState<ResumeItem | null>(null);
   const [downloadTarget, setDownloadTarget] = useState<ResumeItem | null>(null);
-  const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingText, setLoadingText] = useState('');
 
   useEffect(() => {
     loadResumes();
@@ -91,76 +90,164 @@ export default function ListPage() {
     setDeleteTarget(null);
   };
 
-  const handleShare = async (method: string) => {
-    if (!shareTarget) return;
+  const createResumeCanvas = async (resume: ResumeItem): Promise<HTMLCanvasElement> => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas not supported');
 
-    const shareText = `${shareTarget.data.name || ''} 이력서\n\n이름: ${shareTarget.data.name || ''}\n생년월일: ${shareTarget.data.birthDate || ''}\n전화번호: ${shareTarget.data.phone || ''}\n이메일: ${shareTarget.data.email || ''}\n주소: ${shareTarget.data.address || ''}\n\n자기소개:\n${shareTarget.data.introduction || ''}`;
+    canvas.width = 800;
+    canvas.height = 1200;
 
-    switch (method) {
-      case 'kakao':
-        const kakaoUrl = `https://story.kakao.com/share?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(shareText)}`;
-        window.open(kakaoUrl, '_blank');
-        break;
-      case 'sms':
-        window.location.href = `sms:?body=${encodeURIComponent(shareText)}`;
-        break;
-      case 'email':
-        window.location.href = `mailto:?subject=${encodeURIComponent(`${shareTarget.data.name || ''} 이력서`)}&body=${encodeURIComponent(shareText)}`;
-        break;
-      case 'copy':
-        await navigator.clipboard.writeText(shareText);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-        break;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#3B82F6';
+    ctx.fillRect(0, 0, canvas.width, 200);
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 40px sans-serif';
+    ctx.fillText(resume.data.name || '이름', 40, 80);
+
+    ctx.font = '24px sans-serif';
+    ctx.fillText(resume.data.birthDate || '', 40, 120);
+    ctx.fillText(resume.data.phone || '', 40, 160);
+
+    ctx.fillStyle = '#1F2937';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText('연락처', 40, 260);
+
+    ctx.font = '22px sans-serif';
+    ctx.fillStyle = '#374151';
+    ctx.fillText(`전화: ${resume.data.phone || ''}`, 40, 300);
+    ctx.fillText(`이메일: ${resume.data.email || ''}`, 40, 340);
+    ctx.fillText(`주소: ${resume.data.address || ''}`, 40, 380);
+
+    if (resume.data.introduction) {
+      ctx.fillStyle = '#1F2937';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText('자기소개', 40, 460);
+
+      ctx.font = '20px sans-serif';
+      ctx.fillStyle = '#374151';
+      
+      const words = resume.data.introduction.split('');
+      let line = '';
+      let y = 500;
+      const maxWidth = 720;
+      
+      for (let i = 0; i < words.length; i++) {
+        const testLine = line + words[i];
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && line !== '') {
+          ctx.fillText(line, 40, y);
+          line = words[i];
+          y += 32;
+          if (y > 700) break;
+        } else {
+          line = testLine;
+        }
+      }
+      if (line && y <= 700) {
+        ctx.fillText(line, 40, y);
+      }
     }
-    setShareTarget(null);
+
+    if (resume.data.experiences && resume.data.experiences.length > 0 && resume.data.experiences[0].company) {
+      ctx.fillStyle = '#1F2937';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText('경력사항', 40, 780);
+
+      ctx.font = '20px sans-serif';
+      ctx.fillStyle = '#374151';
+      let expY = 820;
+      
+      for (const exp of resume.data.experiences) {
+        if (expY > 950) break;
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillText(exp.company || '', 40, expY);
+        ctx.font = '18px sans-serif';
+        ctx.fillText(`${exp.position || ''} | ${exp.period || ''}`, 40, expY + 30);
+        expY += 80;
+      }
+    }
+
+    if (resume.data.education && resume.data.education.length > 0 && resume.data.education[0].school) {
+      ctx.fillStyle = '#1F2937';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText('학력사항', 40, 1020);
+
+      ctx.font = '20px sans-serif';
+      ctx.fillStyle = '#374151';
+      let eduY = 1060;
+      
+      for (const edu of resume.data.education) {
+        if (eduY > 1150) break;
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillText(edu.school || '', 40, eduY);
+        ctx.font = '18px sans-serif';
+        ctx.fillText(`${edu.major || ''} | ${edu.degree || ''}`, 40, eduY + 30);
+        eduY += 70;
+      }
+    }
+
+    return canvas;
+  };
+
+  const handleShare = async (resume: ResumeItem) => {
+    setIsLoading(true);
+    setLoadingText('이력서 이미지 생성 중...');
+
+    try {
+      const canvas = await createResumeCanvas(resume);
+      
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((b) => {
+          if (b) resolve(b);
+          else reject(new Error('Blob 생성 실패'));
+        }, 'image/png');
+      });
+
+      const file = new File([blob], `${resume.data.name || '이력서'}_이력서.png`, { type: 'image/png' });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `${resume.data.name || ''} 이력서`,
+          text: `${resume.data.name || ''} 이력서입니다.`
+        });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${resume.data.name || '이력서'}_이력서.png`;
+        link.click();
+        URL.revokeObjectURL(url);
+        alert('이 브라우저에서는 파일 공유가 지원되지 않아 이미지를 다운로드했습니다. 다운로드된 이미지를 직접 공유해주세요.');
+      }
+    } catch (e) {
+      console.error('공유 오류:', e);
+      if ((e as Error).name !== 'AbortError') {
+        alert('공유에 실패했습니다.');
+      }
+    } finally {
+      setIsLoading(false);
+      setLoadingText('');
+    }
   };
 
   const handleDownload = async (type: 'image' | 'pdf') => {
     if (!downloadTarget) return;
     setIsLoading(true);
-
-    localStorage.setItem('resumeFormData', JSON.stringify(downloadTarget.data));
-    if (downloadTarget.photo) {
-      localStorage.setItem('resumePhoto', downloadTarget.photo);
-    }
+    setLoadingText(type === 'image' ? '이미지 생성 중...' : 'PDF 생성 중...');
 
     try {
-      const html2canvas = (await import('html2canvas')).default;
-
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = `
-        <div style="width: 400px; background: white; padding: 24px; font-family: sans-serif;">
-          <div style="background: #3B82F6; padding: 20px; color: white; border-radius: 8px 8px 0 0;">
-            <h2 style="margin: 0; font-size: 20px;">${downloadTarget.data.name || '이름'}</h2>
-            <p style="margin: 8px 0 0 0; font-size: 14px;">${downloadTarget.data.birthDate || ''}</p>
-          </div>
-          <div style="padding: 20px; border: 1px solid #E5E7EB; border-top: none;">
-            <p style="margin: 0 0 8px 0; font-size: 14px;">전화: ${downloadTarget.data.phone || ''}</p>
-            <p style="margin: 0 0 8px 0; font-size: 14px;">이메일: ${downloadTarget.data.email || ''}</p>
-            <p style="margin: 0 0 16px 0; font-size: 14px;">주소: ${downloadTarget.data.address || ''}</p>
-            ${downloadTarget.data.introduction ? `
-              <h3 style="margin: 0 0 8px 0; font-size: 16px; color: #3B82F6;">자기소개</h3>
-              <p style="margin: 0; font-size: 14px; line-height: 1.6;">${downloadTarget.data.introduction}</p>
-            ` : ''}
-          </div>
-        </div>
-      `;
-      tempDiv.style.position = 'absolute';
-      tempDiv.style.left = '-9999px';
-      document.body.appendChild(tempDiv);
-
-      const canvas = await html2canvas(tempDiv.firstElementChild as HTMLElement, {
-        scale: 2,
-        backgroundColor: '#ffffff'
-      });
-
-      document.body.removeChild(tempDiv);
+      const canvas = await createResumeCanvas(downloadTarget);
 
       if (type === 'image') {
+        const url = canvas.toDataURL('image/png');
         const link = document.createElement('a');
+        link.href = url;
         link.download = `${downloadTarget.data.name || '이력서'}_이력서.png`;
-        link.href = canvas.toDataURL('image/png');
         link.click();
       } else {
         const { jsPDF } = await import('jspdf');
@@ -176,6 +263,7 @@ export default function ListPage() {
       alert('다운로드에 실패했습니다.');
     } finally {
       setIsLoading(false);
+      setLoadingText('');
       setDownloadTarget(null);
     }
   };
@@ -307,7 +395,7 @@ export default function ListPage() {
 
                 <div style={{ 
                   display: 'flex',
-                  gap: '8px',
+                  gap: '6px',
                   marginTop: '16px',
                   paddingTop: '16px',
                   borderTop: '1px solid #E5E7EB'
@@ -324,7 +412,7 @@ export default function ListPage() {
                       color: '#3B82F6',
                       border: 'none',
                       borderRadius: '10px',
-                      padding: '12px 8px',
+                      padding: '12px 6px',
                       fontSize: '13px',
                       fontWeight: '600',
                       cursor: 'pointer'
@@ -345,7 +433,7 @@ export default function ListPage() {
                       color: '#22C55E',
                       border: 'none',
                       borderRadius: '10px',
-                      padding: '12px 8px',
+                      padding: '12px 6px',
                       fontSize: '13px',
                       fontWeight: '600',
                       cursor: 'pointer'
@@ -355,7 +443,8 @@ export default function ListPage() {
                     수정
                   </button>
                   <button
-                    onClick={() => setShareTarget(resume)}
+                    onClick={() => handleShare(resume)}
+                    disabled={isLoading}
                     style={{ 
                       flex: 1,
                       display: 'flex',
@@ -366,10 +455,11 @@ export default function ListPage() {
                       color: '#A855F7',
                       border: 'none',
                       borderRadius: '10px',
-                      padding: '12px 8px',
+                      padding: '12px 6px',
                       fontSize: '13px',
                       fontWeight: '600',
-                      cursor: 'pointer'
+                      cursor: isLoading ? 'not-allowed' : 'pointer',
+                      opacity: isLoading ? 0.7 : 1
                     }}
                   >
                     <Share2 size={16} />
@@ -387,7 +477,7 @@ export default function ListPage() {
                       color: '#D97706',
                       border: 'none',
                       borderRadius: '10px',
-                      padding: '12px 8px',
+                      padding: '12px 6px',
                       fontSize: '13px',
                       fontWeight: '600',
                       cursor: 'pointer'
@@ -485,62 +575,6 @@ export default function ListPage() {
           </div>
         )}
 
-        {shareTarget && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            zIndex: 1000
-          }}>
-            <div style={{
-              backgroundColor: 'white',
-              borderRadius: '20px 20px 0 0',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '500px'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937' }}>공유하기</h3>
-                <button onClick={() => setShareTarget(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                  <X size={24} color="#6B7280" />
-                </button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-                <button onClick={() => handleShare('kakao')} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer' }}>
-                  <div style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: '#FEE500', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <MessageCircle size={28} color="#3C1E1E" />
-                  </div>
-                  <span style={{ fontSize: '12px', color: '#374151' }}>카카오톡</span>
-                </button>
-                <button onClick={() => handleShare('sms')} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer' }}>
-                  <div style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: '#34C759', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <MessageCircle size={28} color="white" />
-                  </div>
-                  <span style={{ fontSize: '12px', color: '#374151' }}>문자</span>
-                </button>
-                <button onClick={() => handleShare('email')} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer' }}>
-                  <div style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: '#007AFF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Mail size={28} color="white" />
-                  </div>
-                  <span style={{ fontSize: '12px', color: '#374151' }}>이메일</span>
-                </button>
-                <button onClick={() => handleShare('copy')} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer' }}>
-                  <div style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: '#8E8E93', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {copied ? <Check size={28} color="white" /> : <Copy size={28} color="white" />}
-                  </div>
-                  <span style={{ fontSize: '12px', color: '#374151' }}>{copied ? '복사됨' : '복사'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {downloadTarget && (
           <div style={{
             position: 'fixed',
@@ -610,6 +644,38 @@ export default function ListPage() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {isLoading && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              border: '4px solid #E5E7EB',
+              borderTop: '4px solid #3B82F6',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <p style={{ color: 'white', marginTop: '16px', fontSize: '16px' }}>{loadingText}</p>
+            <style jsx>{`
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            `}</style>
           </div>
         )}
 
