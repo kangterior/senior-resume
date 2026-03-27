@@ -1,146 +1,285 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowLeft, Upload, FileText, Check, AlertCircle } from 'lucide-react';
-import Link from 'next/link';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft, Upload, FileText, Loader2, CheckCircle } from 'lucide-react';
 
 export default function UploadPage() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState('');
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      setResult(null);
     }
   };
 
-  const processFile = async () => {
-    if (!selectedFile) return;
-    
+  const handleAnalyze = async () => {
+    if (!selectedFile) {
+      alert('파일을 먼저 선택해주세요.');
+      return;
+    }
+
     setIsProcessing(true);
-    
-    // 테스트용 시뮬레이션 (나중에 실제 OCR로 교체)
-    setTimeout(() => {
-      setResult(`파일 "${selectedFile.name}"에서 정보를 추출했습니다.\n\n[테스트 모드]\n실제 OCR 연동 시 여기에 추출된 텍스트가 표시됩니다.`);
+    setStatusMessage('이력서를 읽고 있어요...');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const ocrResponse = await fetch('/api/ocr', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!ocrResponse.ok) {
+        throw new Error('OCR 처리 실패');
+      }
+
+      const ocrResult = await ocrResponse.json();
+      
+      setStatusMessage('똑순이가 정리하고 있어요...');
+
+      const parseResponse = await fetch('/api/parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ text: ocrResult.text })
+      });
+
+      if (!parseResponse.ok) {
+        throw new Error('분석 처리 실패');
+      }
+
+      const parseResult = await parseResponse.json();
+
+      setStatusMessage('거의 다 됐어요...');
+
+      if (parseResult.success && parseResult.data) {
+        localStorage.setItem('resumeFormData', JSON.stringify(parseResult.data));
+        localStorage.setItem('fromUpload', 'true');
+        localStorage.removeItem('currentResumeId');
+        
+        setStatusMessage('완료! 이동 중...');
+        
+        setTimeout(() => {
+          router.push('/write');
+        }, 500);
+      } else {
+        throw new Error('분석 결과가 없습니다.');
+      }
+
+    } catch (error) {
+      console.error('처리 오류:', error);
       setIsProcessing(false);
-    }, 2000);
+      setStatusMessage('');
+      alert('이력서 분석 중 오류가 발생했습니다. 다시 시도해주세요.');
+    }
+  };
+
+  const handleBack = () => {
+    router.push('/start');
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* 헤더 */}
-      <header className="bg-blue-600 text-white p-4 flex items-center gap-4">
-        <Link href="/" className="p-2">
-          <ArrowLeft className="w-6 h-6" />
-        </Link>
-        <h1 className="text-xl font-bold">이력서 불러오기</h1>
-      </header>
+    <div style={{ minHeight: '100vh', backgroundColor: '#3B82F6' }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '16px 20px',
+        backgroundColor: '#3B82F6'
+      }}>
+        <button
+          onClick={handleBack}
+          style={{
+            backgroundColor: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '8px'
+          }}
+        >
+          <ArrowLeft size={28} color="white" />
+        </button>
+        <h1 style={{ color: 'white', fontSize: '20px', fontWeight: 'bold', marginLeft: '12px' }}>
+          기존 이력서 불러오기
+        </h1>
+      </div>
 
-      <main className="p-4 max-w-lg mx-auto">
-        {/* 파일 선택 영역 */}
-        <div className="card-senior">
-          <h2 className="text-xl font-bold mb-4 text-center">파일 선택</h2>
-          
-          <label className="block">
-            <div className={`
-              border-3 border-dashed rounded-2xl p-8 text-center cursor-pointer
-              transition-all duration-200
-              ${selectedFile 
-                ? 'border-green-400 bg-green-50' 
-                : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
-              }
-            `}>
-              <input
-                type="file"
-                accept=".pdf,.docx,.doc,.hwp,.hwpx,.jpg,.jpeg,.png"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              
-              {selectedFile ? (
-                <div>
-                  <Check className="w-12 h-12 mx-auto text-green-500 mb-3" />
-                  <p className="text-lg font-semibold text-green-700">
-                    {selectedFile.name}
-                  </p>
-                  <p className="text-gray-500 mt-2">
-                    다른 파일을 선택하려면 여기를 누르세요
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  <Upload className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-                  <p className="text-lg font-semibold">
-                    여기를 눌러 파일 선택
-                  </p>
-                  <p className="text-gray-500 mt-2">
-                    PDF, Word, 한글, 이미지 파일
-                  </p>
-                </div>
-              )}
-            </div>
-          </label>
-        </div>
-
-        {/* 분석 버튼 */}
-        {selectedFile && !result && (
-          <button
-            onClick={processFile}
-            disabled={isProcessing}
-            className="btn-primary flex items-center justify-center gap-2"
-          >
-            {isProcessing ? (
-              <>
-                <span className="animate-spin">⏳</span>
-                분석 중...
-              </>
-            ) : (
-              <>
-                <FileText className="w-5 h-5" />
-                이력서 분석하기
-              </>
-            )}
-          </button>
-        )}
-
-        {/* 결과 표시 */}
-        {result && (
-          <div className="card-senior bg-green-50 border-2 border-green-200">
-            <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-              <Check className="w-5 h-5 text-green-600" />
-              분석 완료
-            </h3>
-            <pre className="whitespace-pre-wrap text-gray-700 text-base">
-              {result}
-            </pre>
-            <button
-              onClick={() => router.push('/write')}
-              className="btn-primary mt-4"
-            >
-              이력서 작성하러 가기
-            </button>
+      <div style={{
+        backgroundColor: '#F3F4F6',
+        borderTopLeftRadius: '24px',
+        borderTopRightRadius: '24px',
+        minHeight: 'calc(100vh - 70px)',
+        padding: '24px 20px'
+      }}>
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '16px',
+          padding: '32px 24px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            width: '80px',
+            height: '80px',
+            backgroundColor: '#EFF6FF',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 24px auto'
+          }}>
+            <FileText size={40} color="#3B82F6" />
           </div>
-        )}
 
-        {/* 안내 */}
-        <div className="card-senior bg-blue-50 mt-4">
-          <h3 className="font-bold mb-2 flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-blue-600" />
-            지원 파일 형식
-          </h3>
-          <ul className="text-gray-700 space-y-1">
-            <li>• PDF 문서</li>
-            <li>• Word 문서 (.docx)</li>
-            <li>• 한글 문서 (.hwp)</li>
-            <li>• 이미지 파일 (.jpg, .png)</li>
-          </ul>
+          <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#1F2937', marginBottom: '12px' }}>
+            이력서 파일 업로드
+          </h2>
+          <p style={{ fontSize: '16px', color: '#6B7280', marginBottom: '32px', lineHeight: '1.6' }}>
+            기존에 작성한 이력서 파일을 선택하면<br />
+            똑순이가 자동으로 내용을 정리해드려요
+          </p>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isProcessing}
+            style={{
+              width: '100%',
+              padding: '16px',
+              backgroundColor: isProcessing ? '#E5E7EB' : '#F3F4F6',
+              border: '2px dashed #D1D5DB',
+              borderRadius: '12px',
+              cursor: isProcessing ? 'not-allowed' : 'pointer',
+              marginBottom: '16px'
+            }}
+          >
+            <Upload size={24} color="#6B7280" style={{ marginBottom: '8px' }} />
+            <p style={{ fontSize: '16px', color: '#374151', fontWeight: '500' }}>
+              {selectedFile ? selectedFile.name : '파일 선택하기'}
+            </p>
+            <p style={{ fontSize: '14px', color: '#9CA3AF', marginTop: '4px' }}>
+              PDF, 이미지, Word 파일 지원
+            </p>
+          </button>
+
+          {isProcessing ? (
+            <div style={{
+              width: '100%',
+              padding: '18px',
+              backgroundColor: '#3B82F6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '12px',
+              fontSize: '18px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px'
+            }}>
+              <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
+              {statusMessage}
+            </div>
+          ) : (
+            <button
+              onClick={handleAnalyze}
+              disabled={!selectedFile}
+              style={{
+                width: '100%',
+                padding: '18px',
+                backgroundColor: selectedFile ? '#3B82F6' : '#D1D5DB',
+                color: 'white',
+                border: 'none',
+                borderRadius: '12px',
+                fontSize: '18px',
+                fontWeight: '600',
+                cursor: selectedFile ? 'pointer' : 'not-allowed'
+              }}
+            >
+              이력서 분석하기
+            </button>
+          )}
         </div>
-      </main>
+
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '16px',
+          padding: '20px',
+          marginTop: '20px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+        }}>
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1F2937', marginBottom: '12px' }}>
+            이렇게 진행돼요
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '28px',
+                height: '28px',
+                backgroundColor: '#DBEAFE',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#3B82F6'
+              }}>1</div>
+              <span style={{ fontSize: '15px', color: '#4B5563' }}>파일에서 글자를 읽어요</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '28px',
+                height: '28px',
+                backgroundColor: '#DBEAFE',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#3B82F6'
+              }}>2</div>
+              <span style={{ fontSize: '15px', color: '#4B5563' }}>똑순이가 항목별로 정리해요</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '28px',
+                height: '28px',
+                backgroundColor: '#DBEAFE',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#3B82F6'
+              }}>3</div>
+              <span style={{ fontSize: '15px', color: '#4B5563' }}>자동으로 입력창에 채워져요</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
