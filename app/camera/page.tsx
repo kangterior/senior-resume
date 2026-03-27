@@ -24,6 +24,7 @@ export default function CameraPage() {
 
   const startCamera = async (facingMode: 'user' | 'environment') => {
     setIsLoading(true);
+    setCameraError(false);
     stopAllTracks();
 
     try {
@@ -117,6 +118,10 @@ export default function CameraPage() {
     router.push('/');
   };
 
+  const retryCamera = () => {
+    startCamera(currentFacingMode);
+  };
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#000000' }}>
       <div style={{
@@ -187,9 +192,28 @@ export default function CameraPage() {
                 <p style={{ color: '#9CA3AF', textAlign: 'center', fontSize: '16px', marginBottom: '8px' }}>
                   카메라를 사용할 수 없습니다
                 </p>
-                <p style={{ color: '#6B7280', textAlign: 'center', fontSize: '14px' }}>
-                  아래 사진첩에서 선택해주세요
+                <p style={{ color: '#6B7280', textAlign: 'center', fontSize: '14px', marginBottom: '20px' }}>
+                  권한을 허용하거나 사진첩에서 선택해주세요
                 </p>
+                <button
+                  onClick={retryCamera}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: '#3B82F6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <RefreshCw size={20} />
+                  다시 시도
+                </button>
               </div>
             ) : (
               <>
@@ -207,9 +231,11 @@ export default function CameraPage() {
                       top: '50%',
                       left: '50%',
                       transform: 'translate(-50%, -50%)',
-                      color: 'white'
+                      color: 'white',
+                      textAlign: 'center'
                     }}>
-                      카메라 로딩중...
+                      <RefreshCw size={32} color="white" style={{ marginBottom: '12px', animation: 'spin 1s linear infinite' }} />
+                      <p>카메라 로딩중...</p>
                     </div>
                   )}
                   <video
@@ -344,16 +370,16 @@ export default function CameraPage() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: '60px',
-                  height: '60px',
-                  backgroundColor: '#374151',
+                  width: cameraError ? '80px' : '60px',
+                  height: cameraError ? '80px' : '60px',
+                  backgroundColor: cameraError ? '#3B82F6' : '#374151',
                   color: 'white',
-                  border: 'none',
+                  border: cameraError ? '4px solid white' : 'none',
                   borderRadius: '50%',
                   cursor: 'pointer'
                 }}
               >
-                <Image size={24} />
+                <Image size={cameraError ? 32 : 24} />
               </button>
             </div>
 
@@ -363,6 +389,13 @@ export default function CameraPage() {
           </div>
         )}
       </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
