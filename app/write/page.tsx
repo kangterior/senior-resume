@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Camera, User, Plus, Trash2, Save, Eye } from 'lucide-react';
+import { ArrowLeft, Camera, User, Plus, Trash2, Save, Eye, Mic, MicOff } from 'lucide-react';
 
 interface Experience {
   id: string;
@@ -44,6 +44,10 @@ export default function WritePage() {
   });
   const [experiences, setExperiences] = useState<Experience[]>([]);
   const [education, setEducation] = useState<Education[]>([]);
+  
+  const [isListening, setIsListening] = useState(false);
+  const [activeField, setActiveField] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     const savedPhoto = localStorage.getItem('resumePhoto');
@@ -93,6 +97,40 @@ export default function WritePage() {
         console.error('데이터 로드 오류:', e);
       }
     }
+
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        recognitionRef.current = new SpeechRecognition();
+        recognitionRef.current.continuous = false;
+        recognitionRef.current.interimResults = false;
+        recognitionRef.current.lang = 'ko-KR';
+
+        recognitionRef.current.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          if (activeField) {
+            handleVoiceInput(activeField, transcript);
+          }
+          setIsListening(false);
+          setActiveField(null);
+        };
+
+        recognitionRef.current.onerror = () => {
+          setIsListening(false);
+          setActiveField(null);
+        };
+
+        recognitionRef.current.onend = () => {
+          setIsListening(false);
+        };
+      }
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -106,6 +144,40 @@ export default function WritePage() {
     window.addEventListener('focus', checkPhoto);
     return () => window.removeEventListener('focus', checkPhoto);
   }, [photo]);
+
+  const handleVoiceInput = (field: string, transcript: string) => {
+    if (field.startsWith('exp-')) {
+      const parts = field.split('-');
+      const expId = `exp-${parts[1]}`;
+      const expField = parts[2] as keyof Experience;
+      updateExperience(expId, expField, transcript);
+    } else if (field.startsWith('edu-')) {
+      const parts = field.split('-');
+      const eduId = `edu-${parts[1]}`;
+      const eduField = parts[2] as keyof Education;
+      updateEducation(eduId, eduField, transcript);
+    } else {
+      setFormData(prev => ({ ...prev, [field]: prev[field as keyof FormData] + transcript }));
+    }
+  };
+
+  const startListening = (field: string) => {
+    if (!recognitionRef.current) {
+      alert('이 브라우저에서는 음성 입력을 지원하지 않습니다.');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      setActiveField(null);
+      return;
+    }
+
+    setActiveField(field);
+    setIsListening(true);
+    recognitionRef.current.start();
+  };
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -295,6 +367,28 @@ export default function WritePage() {
     router.push('/camera');
   };
 
+  const renderVoiceButton = (field: string) => (
+    <button
+      onClick={() => startListening(field)}
+      style={{
+        backgroundColor: isListening && activeField === field ? '#EF4444' : '#F3F4F6',
+        border: 'none',
+        borderRadius: '8px',
+        padding: '10px',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}
+    >
+      {isListening && activeField === field ? (
+        <MicOff size={20} color="white" />
+      ) : (
+        <Mic size={20} color="#6B7280" />
+      )}
+    </button>
+  );
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#3B82F6' }}>
       <div style={{
@@ -317,6 +411,29 @@ export default function WritePage() {
         <h1 style={{ color: 'white', fontSize: '20px', fontWeight: 'bold', marginLeft: '12px' }}>
           이력서 작성
         </h1>
+        {isListening && (
+          <div style={{
+            marginLeft: 'auto',
+            backgroundColor: '#EF4444',
+            color: 'white',
+            padding: '6px 12px',
+            borderRadius: '20px',
+            fontSize: '14px',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <div style={{
+              width: '8px',
+              height: '8px',
+              backgroundColor: 'white',
+              borderRadius: '50%',
+              animation: 'pulse 1s infinite'
+            }} />
+            듣는 중...
+          </div>
+        )}
       </div>
 
       <div style={{
@@ -387,96 +504,114 @@ export default function WritePage() {
             <span style={{ marginLeft: '8px', fontSize: '18px', fontWeight: '600', color: '#1F2937' }}>
               기본 정보
             </span>
+            <span style={{ marginLeft: 'auto', fontSize: '13px', color: '#9CA3AF' }}>
+              마이크로 입력 가능
+            </span>
           </div>
 
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>이름</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
-              placeholder="이름을 입력하세요"
-              style={{
-                width: '100%',
-                padding: '14px 16px',
-                border: '1px solid #E5E7EB',
-                borderRadius: '10px',
-                fontSize: '16px',
-                boxSizing: 'border-box'
-              }}
-            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => handleInputChange('name', e.target.value)}
+                placeholder="이름을 입력하세요"
+                style={{
+                  flex: 1,
+                  padding: '14px 16px',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '10px',
+                  fontSize: '16px',
+                  boxSizing: 'border-box'
+                }}
+              />
+              {renderVoiceButton('name')}
+            </div>
           </div>
 
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>생년월일</label>
-            <input
-              type="text"
-              value={formData.birthDate}
-              onChange={(e) => handleInputChange('birthDate', e.target.value)}
-              placeholder="예: 1990-01-01"
-              style={{
-                width: '100%',
-                padding: '14px 16px',
-                border: '1px solid #E5E7EB',
-                borderRadius: '10px',
-                fontSize: '16px',
-                boxSizing: 'border-box'
-              }}
-            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                value={formData.birthDate}
+                onChange={(e) => handleInputChange('birthDate', e.target.value)}
+                placeholder="예: 1990-01-01"
+                style={{
+                  flex: 1,
+                  padding: '14px 16px',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '10px',
+                  fontSize: '16px',
+                  boxSizing: 'border-box'
+                }}
+              />
+              {renderVoiceButton('birthDate')}
+            </div>
           </div>
 
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>전화번호</label>
-            <input
-              type="tel"
-              value={formData.phone}
-              onChange={(e) => handleInputChange('phone', e.target.value)}
-              placeholder="010-0000-0000"
-              style={{
-                width: '100%',
-                padding: '14px 16px',
-                border: '1px solid #E5E7EB',
-                borderRadius: '10px',
-                fontSize: '16px',
-                boxSizing: 'border-box'
-              }}
-            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => handleInputChange('phone', e.target.value)}
+                placeholder="010-0000-0000"
+                style={{
+                  flex: 1,
+                  padding: '14px 16px',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '10px',
+                  fontSize: '16px',
+                  boxSizing: 'border-box'
+                }}
+              />
+              {renderVoiceButton('phone')}
+            </div>
           </div>
 
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>이메일</label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => handleInputChange('email', e.target.value)}
-              placeholder="example@email.com"
-              style={{
-                width: '100%',
-                padding: '14px 16px',
-                border: '1px solid #E5E7EB',
-                borderRadius: '10px',
-                fontSize: '16px',
-                boxSizing: 'border-box'
-              }}
-            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => handleInputChange('email', e.target.value)}
+                placeholder="example@email.com"
+                style={{
+                  flex: 1,
+                  padding: '14px 16px',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '10px',
+                  fontSize: '16px',
+                  boxSizing: 'border-box'
+                }}
+              />
+              {renderVoiceButton('email')}
+            </div>
           </div>
 
           <div>
             <label style={{ display: 'block', fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>주소</label>
-            <input
-              type="text"
-              value={formData.address}
-              onChange={(e) => handleInputChange('address', e.target.value)}
-              placeholder="주소를 입력하세요"
-              style={{
-                width: '100%',
-                padding: '14px 16px',
-                border: '1px solid #E5E7EB',
-                borderRadius: '10px',
-                fontSize: '16px',
-                boxSizing: 'border-box'
-              }}
-            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                value={formData.address}
+                onChange={(e) => handleInputChange('address', e.target.value)}
+                placeholder="주소를 입력하세요"
+                style={{
+                  flex: 1,
+                  padding: '14px 16px',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '10px',
+                  fontSize: '16px',
+                  boxSizing: 'border-box'
+                }}
+              />
+              {renderVoiceButton('address')}
+            </div>
           </div>
         </div>
 
@@ -531,62 +666,71 @@ export default function WritePage() {
               >
                 <Trash2 size={20} color="#EF4444" />
               </button>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 <input
                   type="text"
                   value={exp.company}
                   onChange={(e) => updateExperience(exp.id, 'company', e.target.value)}
                   placeholder="회사명"
                   style={{
+                    flex: 1,
                     padding: '12px',
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
                     fontSize: '15px'
                   }}
                 />
+                {renderVoiceButton(`${exp.id}-company`)}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 <input
                   type="text"
                   value={exp.position}
                   onChange={(e) => updateExperience(exp.id, 'position', e.target.value)}
                   placeholder="직위"
                   style={{
+                    flex: 1,
                     padding: '12px',
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
                     fontSize: '15px'
                   }}
                 />
+                {renderVoiceButton(`${exp.id}-position`)}
               </div>
-              <input
-                type="text"
-                value={exp.period}
-                onChange={(e) => updateExperience(exp.id, 'period', e.target.value)}
-                placeholder="근무기간 (예: 2020.01 - 2023.12)"
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #E5E7EB',
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  marginBottom: '12px',
-                  boxSizing: 'border-box'
-                }}
-              />
-              <textarea
-                value={exp.duties}
-                onChange={(e) => updateExperience(exp.id, 'duties', e.target.value)}
-                placeholder="담당 업무"
-                rows={2}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #E5E7EB',
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  resize: 'none',
-                  boxSizing: 'border-box'
-                }}
-              />
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                <input
+                  type="text"
+                  value={exp.period}
+                  onChange={(e) => updateExperience(exp.id, 'period', e.target.value)}
+                  placeholder="근무기간 (예: 2020.01 - 2023.12)"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '8px',
+                    fontSize: '15px'
+                  }}
+                />
+                {renderVoiceButton(`${exp.id}-period`)}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <textarea
+                  value={exp.duties}
+                  onChange={(e) => updateExperience(exp.id, 'duties', e.target.value)}
+                  placeholder="담당 업무"
+                  rows={2}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '8px',
+                    fontSize: '15px',
+                    resize: 'none'
+                  }}
+                />
+                {renderVoiceButton(`${exp.id}-duties`)}
+              </div>
             </div>
           ))}
         </div>
@@ -642,57 +786,69 @@ export default function WritePage() {
               >
                 <Trash2 size={20} color="#EF4444" />
               </button>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 <input
                   type="text"
                   value={edu.school}
                   onChange={(e) => updateEducation(edu.id, 'school', e.target.value)}
                   placeholder="학교명"
                   style={{
+                    flex: 1,
                     padding: '12px',
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
                     fontSize: '15px'
                   }}
                 />
+                {renderVoiceButton(`${edu.id}-school`)}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 <input
                   type="text"
                   value={edu.major}
                   onChange={(e) => updateEducation(edu.id, 'major', e.target.value)}
                   placeholder="전공"
                   style={{
+                    flex: 1,
                     padding: '12px',
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
                     fontSize: '15px'
                   }}
                 />
+                {renderVoiceButton(`${edu.id}-major`)}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 <input
                   type="text"
                   value={edu.period}
                   onChange={(e) => updateEducation(edu.id, 'period', e.target.value)}
                   placeholder="재학기간"
                   style={{
+                    flex: 1,
                     padding: '12px',
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
                     fontSize: '15px'
                   }}
                 />
+                {renderVoiceButton(`${edu.id}-period`)}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                   type="text"
                   value={edu.degree}
                   onChange={(e) => updateEducation(edu.id, 'degree', e.target.value)}
                   placeholder="학위"
                   style={{
+                    flex: 1,
                     padding: '12px',
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
                     fontSize: '15px'
                   }}
                 />
+                {renderVoiceButton(`${edu.id}-degree`)}
               </div>
             </div>
           ))}
@@ -705,9 +861,12 @@ export default function WritePage() {
           marginBottom: '20px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
         }}>
-          <span style={{ fontSize: '18px', fontWeight: '600', color: '#1F2937', display: 'block', marginBottom: '16px' }}>
-            자기소개
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <span style={{ fontSize: '18px', fontWeight: '600', color: '#1F2937' }}>
+              자기소개
+            </span>
+            {renderVoiceButton('introduction')}
+          </div>
           <textarea
             value={formData.introduction}
             onChange={(e) => handleInputChange('introduction', e.target.value)}
@@ -780,6 +939,13 @@ export default function WritePage() {
           미리보기
         </button>
       </div>
+
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
     </div>
   );
 }
