@@ -89,6 +89,18 @@ export default function WritePage() {
     }
   }, []);
 
+  useEffect(() => {
+    const checkPhoto = () => {
+      const savedPhoto = localStorage.getItem('resumePhoto');
+      if (savedPhoto && savedPhoto !== photo) {
+        setPhoto(savedPhoto);
+      }
+    };
+
+    window.addEventListener('focus', checkPhoto);
+    return () => window.removeEventListener('focus', checkPhoto);
+  }, [photo]);
+
   const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -263,6 +275,16 @@ export default function WritePage() {
     router.push('/preview');
   };
 
+  const handleCameraClick = () => {
+    const resumeData = {
+      ...formData,
+      experiences,
+      education
+    };
+    localStorage.setItem('resumeFormData', JSON.stringify(resumeData));
+    router.push('/camera');
+  };
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#3B82F6' }}>
       <div style={{
@@ -326,7 +348,7 @@ export default function WritePage() {
               )}
             </div>
             <button
-              onClick={() => router.push('/camera')}
+              onClick={handleCameraClick}
               style={{
                 backgroundColor: '#3B82F6',
                 color: 'white',
