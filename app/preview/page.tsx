@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, Edit, User, Share2, X, MessageCircle, Mail, Copy, Check, Palette } from 'lucide-react';
+import { ArrowLeft, Download, Edit, User, Share2, X, MessageCircle, Mail, Copy, Check, Palette, QrCode } from 'lucide-react';
 
 interface ResumeData {
   name: string;
@@ -44,6 +44,8 @@ export default function PreviewPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(templates[0]);
 
@@ -76,6 +78,67 @@ export default function PreviewPage() {
     setSelectedTemplate(template);
     localStorage.setItem('selectedTemplate', template.id);
     setShowTemplateModal(false);
+  };
+
+  const generateShareText = () => {
+    if (!data) return '';
+    
+    let text = `[이력서]\n\n`;
+    text += `이름: ${data.name}\n`;
+    if (data.birthDate) text += `생년월일: ${data.birthDate}\n`;
+    text += `전화번호: ${data.phone}\n`;
+    if (data.email) text += `이메일: ${data.email}\n`;
+    if (data.address) text += `주소: ${data.address}\n`;
+    
+    if (data.experiences && data.experiences.length > 0) {
+      text += `\n[경력사항]\n`;
+      data.experiences.forEach(exp => {
+        text += `- ${exp.company} / ${exp.position} (${exp.period})\n`;
+        if (exp.duties) text += `  ${exp.duties}\n`;
+      });
+    }
+    
+    if (data.education && data.education.length > 0) {
+      text += `\n[학력사항]\n`;
+      data.education.forEach(edu => {
+        text += `- ${edu.school} ${edu.major} (${edu.period}) ${edu.degree}\n`;
+      });
+    }
+    
+    if (data.introduction) {
+      text += `\n[자기소개]\n${data.introduction}\n`;
+    }
+    
+    return text;
+  };
+
+  const generateQRCode = async () => {
+    try {
+      const QRCode = (await import('qrcode')).default;
+      const text = generateShareText();
+      const url = await QRCode.toDataURL(text, {
+        width: 256,
+        margin: 2,
+        color: {
+          dark: selectedTemplate.primary,
+          light: '#FFFFFF'
+        }
+      });
+      setQrCodeUrl(url);
+      setShowQRModal(true);
+    } catch (error) {
+      console.error('QR 생성 오류:', error);
+      alert('QR코드 생성에 실패했습니다.');
+    }
+  };
+
+  const downloadQRCode = () => {
+    if (qrCodeUrl) {
+      const link = document.createElement('a');
+      link.download = `${data?.name || '이력서'}_QR코드.png`;
+      link.href = qrCodeUrl;
+      link.click();
+    }
   };
 
   const handleDownloadImage = async () => {
@@ -142,38 +205,6 @@ export default function PreviewPage() {
       alert('PDF 생성 중 오류가 발생했습니다.');
     }
     setIsDownloading(false);
-  };
-
-  const generateShareText = () => {
-    if (!data) return '';
-    
-    let text = `[이력서]\n\n`;
-    text += `이름: ${data.name}\n`;
-    if (data.birthDate) text += `생년월일: ${data.birthDate}\n`;
-    text += `전화번호: ${data.phone}\n`;
-    if (data.email) text += `이메일: ${data.email}\n`;
-    if (data.address) text += `주소: ${data.address}\n`;
-    
-    if (data.experiences && data.experiences.length > 0) {
-      text += `\n[경력사항]\n`;
-      data.experiences.forEach(exp => {
-        text += `- ${exp.company} / ${exp.position} (${exp.period})\n`;
-        if (exp.duties) text += `  ${exp.duties}\n`;
-      });
-    }
-    
-    if (data.education && data.education.length > 0) {
-      text += `\n[학력사항]\n`;
-      data.education.forEach(edu => {
-        text += `- ${edu.school} ${edu.major} (${edu.period}) ${edu.degree}\n`;
-      });
-    }
-    
-    if (data.introduction) {
-      text += `\n[자기소개]\n${data.introduction}\n`;
-    }
-    
-    return text;
   };
 
   const handleShareKakao = async () => {
@@ -281,7 +312,7 @@ export default function PreviewPage() {
         </button>
       </div>
 
-      <div style={{ padding: '20px', paddingBottom: '200px' }}>
+      <div style={{ padding: '20px', paddingBottom: '220px' }}>
         <div
           ref={resumeRef}
           style={{
@@ -469,7 +500,7 @@ export default function PreviewPage() {
             }}
           >
             <Edit size={20} />
-            수정하기
+            수정
           </button>
           <button
             onClick={handleNativeShare}
@@ -490,7 +521,28 @@ export default function PreviewPage() {
             }}
           >
             <Share2 size={20} />
-            공유하기
+            공유
+          </button>
+          <button
+            onClick={generateQRCode}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              backgroundColor: '#8B5CF6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '12px',
+              padding: '14px',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            <QrCode size={20} />
+            QR
           </button>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -515,7 +567,7 @@ export default function PreviewPage() {
             }}
           >
             <Download size={20} />
-            이미지 저장
+            이미지
           </button>
           <button
             onClick={handleDownloadPDF}
@@ -538,10 +590,104 @@ export default function PreviewPage() {
             }}
           >
             <Download size={20} />
-            PDF 저장
+            PDF
           </button>
         </div>
       </div>
+
+      {showQRModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '24px',
+            padding: '32px',
+            width: '100%',
+            maxWidth: '340px',
+            textAlign: 'center'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '20px', fontWeight: 'bold', color: '#1F2937' }}>QR코드</h3>
+              <button
+                onClick={() => setShowQRModal(false)}
+                style={{
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '8px'
+                }}
+              >
+                <X size={24} color="#6B7280" />
+              </button>
+            </div>
+
+            {qrCodeUrl && (
+              <div style={{ marginBottom: '24px' }}>
+                <img 
+                  src={qrCodeUrl} 
+                  alt="이력서 QR코드" 
+                  style={{ 
+                    width: '200px', 
+                    height: '200px', 
+                    margin: '0 auto',
+                    borderRadius: '12px',
+                    border: `4px solid ${selectedTemplate.accent}`
+                  }} 
+                />
+                <p style={{ fontSize: '14px', color: '#6B7280', marginTop: '16px' }}>
+                  QR코드를 스캔하면<br />이력서 정보를 확인할 수 있어요
+                </p>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={downloadQRCode}
+                style={{
+                  flex: 1,
+                  backgroundColor: selectedTemplate.primary,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                저장하기
+              </button>
+              <button
+                onClick={() => setShowQRModal(false)}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#F3F4F6',
+                  color: '#374151',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showTemplateModal && (
         <div style={{
