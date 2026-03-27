@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, Edit, User, Share2, X, MessageCircle, Mail, Copy, Check } from 'lucide-react';
+import { ArrowLeft, Download, Edit, User, Share2, X, MessageCircle, Mail, Copy, Check, Palette } from 'lucide-react';
 
 interface ResumeData {
   name: string;
@@ -27,6 +27,15 @@ interface ResumeData {
   }>;
 }
 
+const templates = [
+  { id: 'basic', name: '기본', primary: '#3B82F6', secondary: '#EFF6FF', accent: '#DBEAFE' },
+  { id: 'modern', name: '모던', primary: '#8B5CF6', secondary: '#F5F3FF', accent: '#EDE9FE' },
+  { id: 'warm', name: '따뜻한', primary: '#F97316', secondary: '#FFF7ED', accent: '#FFEDD5' },
+  { id: 'nature', name: '자연', primary: '#22C55E', secondary: '#F0FDF4', accent: '#DCFCE7' },
+  { id: 'elegant', name: '우아한', primary: '#64748B', secondary: '#F8FAFC', accent: '#F1F5F9' },
+  { id: 'rose', name: '로즈', primary: '#EC4899', secondary: '#FDF2F8', accent: '#FCE7F3' },
+];
+
 export default function PreviewPage() {
   const router = useRouter();
   const resumeRef = useRef<HTMLDivElement>(null);
@@ -34,11 +43,14 @@ export default function PreviewPage() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState(templates[0]);
 
   useEffect(() => {
     const savedData = localStorage.getItem('resumeFormData');
     const savedPhoto = localStorage.getItem('resumePhoto');
+    const savedTemplate = localStorage.getItem('selectedTemplate');
 
     if (savedData) {
       try {
@@ -51,7 +63,20 @@ export default function PreviewPage() {
     if (savedPhoto) {
       setPhoto(savedPhoto);
     }
+
+    if (savedTemplate) {
+      const template = templates.find(t => t.id === savedTemplate);
+      if (template) {
+        setSelectedTemplate(template);
+      }
+    }
   }, []);
+
+  const handleTemplateSelect = (template: typeof templates[0]) => {
+    setSelectedTemplate(template);
+    localStorage.setItem('selectedTemplate', template.id);
+    setShowTemplateModal(false);
+  };
 
   const handleDownloadImage = async () => {
     if (!resumeRef.current) return;
@@ -153,7 +178,6 @@ export default function PreviewPage() {
 
   const handleShareKakao = async () => {
     const text = generateShareText();
-    const kakaoUrl = `https://story.kakao.com/share?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(text)}`;
     
     if (navigator.share) {
       try {
@@ -162,9 +186,10 @@ export default function PreviewPage() {
           text: text
         });
       } catch (e) {
-        window.open(kakaoUrl, '_blank');
+        console.log('공유 취소');
       }
     } else {
+      const kakaoUrl = `https://story.kakao.com/share?text=${encodeURIComponent(text)}`;
       window.open(kakaoUrl, '_blank');
     }
     setShowShareModal(false);
@@ -172,16 +197,14 @@ export default function PreviewPage() {
 
   const handleShareSMS = () => {
     const text = generateShareText();
-    const smsUrl = `sms:?body=${encodeURIComponent(text)}`;
-    window.location.href = smsUrl;
+    window.location.href = `sms:?body=${encodeURIComponent(text)}`;
     setShowShareModal(false);
   };
 
   const handleShareEmail = () => {
     const text = generateShareText();
     const subject = `${data?.name || ''} 이력서`;
-    const mailUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
-    window.location.href = mailUrl;
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
     setShowShareModal(false);
   };
 
@@ -190,44 +213,26 @@ export default function PreviewPage() {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => {
+        setCopied(false);
+        setShowShareModal(false);
+      }, 1500);
     } catch (e) {
       alert('복사에 실패했습니다.');
     }
   };
 
   const handleNativeShare = async () => {
-    if (!resumeRef.current) return;
-
-    try {
-      const html2canvasModule = await import('html2canvas');
-      const html2canvas = html2canvasModule.default;
-
-      const canvas = await html2canvas(resumeRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false
-      });
-
-      canvas.toBlob(async (blob) => {
-        if (blob && navigator.share) {
-          const file = new File([blob], `${data?.name || '이력서'}_이력서.png`, { type: 'image/png' });
-          
-          try {
-            await navigator.share({
-              title: `${data?.name || ''} 이력서`,
-              text: generateShareText(),
-              files: [file]
-            });
-          } catch (e) {
-            setShowShareModal(true);
-          }
-        } else {
-          setShowShareModal(true);
-        }
-      }, 'image/png');
-    } catch (e) {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${data?.name || ''} 이력서`,
+          text: generateShareText()
+        });
+      } catch (e) {
+        setShowShareModal(true);
+      }
+    } else {
       setShowShareModal(true);
     }
   };
@@ -247,7 +252,7 @@ export default function PreviewPage() {
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '16px 20px',
-        backgroundColor: '#3B82F6'
+        backgroundColor: selectedTemplate.primary
       }}>
         <button
           onClick={() => router.push('/write')}
@@ -264,7 +269,7 @@ export default function PreviewPage() {
           미리보기
         </h1>
         <button
-          onClick={handleNativeShare}
+          onClick={() => setShowTemplateModal(true)}
           style={{
             backgroundColor: 'transparent',
             border: 'none',
@@ -272,7 +277,7 @@ export default function PreviewPage() {
             padding: '8px'
           }}
         >
-          <Share2 size={24} color="white" />
+          <Palette size={24} color="white" />
         </button>
       </div>
 
@@ -286,26 +291,33 @@ export default function PreviewPage() {
             boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
           }}
         >
-          <div style={{ display: 'flex', gap: '20px', marginBottom: '28px', paddingBottom: '24px', borderBottom: '2px solid #E5E7EB' }}>
+          <div style={{ 
+            display: 'flex', 
+            gap: '20px', 
+            marginBottom: '28px', 
+            paddingBottom: '24px', 
+            borderBottom: `3px solid ${selectedTemplate.accent}` 
+          }}>
             <div style={{
               width: '100px',
               height: '130px',
-              backgroundColor: '#F3F4F6',
+              backgroundColor: selectedTemplate.secondary,
               borderRadius: '8px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               overflow: 'hidden',
-              flexShrink: 0
+              flexShrink: 0,
+              border: `2px solid ${selectedTemplate.accent}`
             }}>
               {photo ? (
                 <img src={photo} alt="증명사진" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
-                <User size={40} color="#9CA3AF" />
+                <User size={40} color={selectedTemplate.primary} />
               )}
             </div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: '28px', fontWeight: 'bold', color: '#1F2937', marginBottom: '12px' }}>
+              <h2 style={{ fontSize: '28px', fontWeight: 'bold', color: selectedTemplate.primary, marginBottom: '12px' }}>
                 {data.name || '이름 없음'}
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -325,7 +337,14 @@ export default function PreviewPage() {
 
           {data.introduction && (
             <div style={{ marginBottom: '28px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#3B82F6', marginBottom: '12px' }}>
+              <h3 style={{ 
+                fontSize: '18px', 
+                fontWeight: '600', 
+                color: selectedTemplate.primary, 
+                marginBottom: '12px',
+                paddingBottom: '8px',
+                borderBottom: `2px solid ${selectedTemplate.accent}`
+              }}>
                 자기소개
               </h3>
               <p style={{ fontSize: '15px', color: '#4B5563', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>
@@ -336,15 +355,23 @@ export default function PreviewPage() {
 
           {data.experiences && data.experiences.length > 0 && (
             <div style={{ marginBottom: '28px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#3B82F6', marginBottom: '16px' }}>
+              <h3 style={{ 
+                fontSize: '18px', 
+                fontWeight: '600', 
+                color: selectedTemplate.primary, 
+                marginBottom: '16px',
+                paddingBottom: '8px',
+                borderBottom: `2px solid ${selectedTemplate.accent}`
+              }}>
                 경력사항
               </h3>
               {data.experiences.map((exp, index) => (
                 <div key={exp.id || index} style={{
-                  backgroundColor: '#F9FAFB',
+                  backgroundColor: selectedTemplate.secondary,
                   borderRadius: '10px',
                   padding: '16px',
-                  marginBottom: '12px'
+                  marginBottom: '12px',
+                  borderLeft: `4px solid ${selectedTemplate.primary}`
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                     <div>
@@ -352,8 +379,8 @@ export default function PreviewPage() {
                       <p style={{ fontSize: '14px', color: '#6B7280' }}>{exp.position}</p>
                     </div>
                     <span style={{
-                      backgroundColor: '#DBEAFE',
-                      color: '#3B82F6',
+                      backgroundColor: selectedTemplate.accent,
+                      color: selectedTemplate.primary,
                       padding: '4px 10px',
                       borderRadius: '6px',
                       fontSize: '13px',
@@ -372,15 +399,23 @@ export default function PreviewPage() {
 
           {data.education && data.education.length > 0 && (
             <div>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#3B82F6', marginBottom: '16px' }}>
+              <h3 style={{ 
+                fontSize: '18px', 
+                fontWeight: '600', 
+                color: selectedTemplate.primary, 
+                marginBottom: '16px',
+                paddingBottom: '8px',
+                borderBottom: `2px solid ${selectedTemplate.accent}`
+              }}>
                 학력사항
               </h3>
               {data.education.map((edu, index) => (
                 <div key={edu.id || index} style={{
-                  backgroundColor: '#F9FAFB',
+                  backgroundColor: selectedTemplate.secondary,
                   borderRadius: '10px',
                   padding: '16px',
-                  marginBottom: '12px'
+                  marginBottom: '12px',
+                  borderLeft: `4px solid ${selectedTemplate.primary}`
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
@@ -388,8 +423,8 @@ export default function PreviewPage() {
                       <p style={{ fontSize: '14px', color: '#6B7280' }}>{edu.major} {edu.degree}</p>
                     </div>
                     <span style={{
-                      backgroundColor: '#DBEAFE',
-                      color: '#3B82F6',
+                      backgroundColor: selectedTemplate.accent,
+                      color: selectedTemplate.primary,
                       padding: '4px 10px',
                       borderRadius: '6px',
                       fontSize: '13px',
@@ -444,7 +479,7 @@ export default function PreviewPage() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '8px',
-              backgroundColor: '#8B5CF6',
+              backgroundColor: selectedTemplate.primary,
               color: 'white',
               border: 'none',
               borderRadius: '12px',
@@ -507,6 +542,95 @@ export default function PreviewPage() {
           </button>
         </div>
       </div>
+
+      {showTemplateModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderTopLeftRadius: '24px',
+            borderTopRightRadius: '24px',
+            padding: '24px',
+            width: '100%',
+            maxWidth: '500px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '20px', fontWeight: 'bold', color: '#1F2937' }}>템플릿 선택</h3>
+              <button
+                onClick={() => setShowTemplateModal(false)}
+                style={{
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '8px'
+                }}
+              >
+                <X size={24} color="#6B7280" />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
+              {templates.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => handleTemplateSelect(template)}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: selectedTemplate.id === template.id ? template.secondary : 'white',
+                    border: selectedTemplate.id === template.id ? `3px solid ${template.primary}` : '2px solid #E5E7EB',
+                    borderRadius: '12px',
+                    padding: '16px 12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    backgroundColor: template.primary,
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {selectedTemplate.id === template.id && <Check size={24} color="white" />}
+                  </div>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#374151' }}>{template.name}</span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowTemplateModal(false)}
+              style={{
+                width: '100%',
+                backgroundColor: '#F3F4F6',
+                color: '#374151',
+                border: 'none',
+                borderRadius: '12px',
+                padding: '16px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
 
       {showShareModal && (
         <div style={{
