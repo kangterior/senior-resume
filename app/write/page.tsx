@@ -33,6 +33,7 @@ export default function WritePage() {
   const router = useRouter();
   const [photo, setPhoto] = useState<string | null>(null);
   const [currentResumeId, setCurrentResumeId] = useState<string | null>(null);
+  const [cameFromList, setCameFromList] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     name: '',
     birthDate: '',
@@ -48,6 +49,11 @@ export default function WritePage() {
     const savedPhoto = localStorage.getItem('resumePhoto');
     if (savedPhoto) {
       setPhoto(savedPhoto);
+    }
+
+    const fromList = localStorage.getItem('cameFromList');
+    if (fromList === 'true') {
+      setCameFromList(true);
     }
 
     const savedId = localStorage.getItem('currentResumeId');
@@ -88,6 +94,18 @@ export default function WritePage() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    const checkPhoto = () => {
+      const savedPhoto = localStorage.getItem('resumePhoto');
+      if (savedPhoto && savedPhoto !== photo) {
+        setPhoto(savedPhoto);
+      }
+    };
+
+    window.addEventListener('focus', checkPhoto);
+    return () => window.removeEventListener('focus', checkPhoto);
+  }, [photo]);
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -195,7 +213,13 @@ export default function WritePage() {
     localStorage.removeItem('currentResumeId');
     localStorage.removeItem('resumeFormData');
     localStorage.removeItem('resumePhoto');
-    router.push('/');
+    localStorage.removeItem('cameFromList');
+    
+    if (cameFromList) {
+      router.push('/list');
+    } else {
+      router.push('/');
+    }
   };
 
   const handleSave = () => {
@@ -239,15 +263,13 @@ export default function WritePage() {
     }
 
     localStorage.setItem('resumeList', JSON.stringify(resumeList));
-    localStorage.setItem('resumeFormData', JSON.stringify(resumeData));
-    localStorage.setItem('currentResumeId', savedId || '');
-    setCurrentResumeId(savedId);
-
-    if (photo) {
-      localStorage.setItem('resumePhoto', photo);
-    }
+    localStorage.removeItem('resumeFormData');
+    localStorage.removeItem('resumePhoto');
+    localStorage.removeItem('currentResumeId');
+    localStorage.removeItem('cameFromList');
 
     alert('이력서가 저장되었습니다.');
+    router.push('/list');
   };
 
   const handlePreview = () => {
@@ -261,6 +283,16 @@ export default function WritePage() {
       localStorage.setItem('resumePhoto', photo);
     }
     router.push('/preview');
+  };
+
+  const handleCameraClick = () => {
+    const resumeData = {
+      ...formData,
+      experiences,
+      education
+    };
+    localStorage.setItem('resumeFormData', JSON.stringify(resumeData));
+    router.push('/camera');
   };
 
   return (
@@ -326,7 +358,7 @@ export default function WritePage() {
               )}
             </div>
             <button
-              onClick={() => router.push('/camera')}
+              onClick={handleCameraClick}
               style={{
                 backgroundColor: '#3B82F6',
                 color: 'white',

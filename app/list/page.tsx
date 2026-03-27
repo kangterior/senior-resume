@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, User, Trash2, Eye, Edit, Share2 } from 'lucide-react';
+import { ArrowLeft, User, Trash2, Eye, Edit, Share2, X, MessageCircle, Mail, Copy, Check } from 'lucide-react';
 
 interface ResumeData {
   name: string;
@@ -39,6 +39,8 @@ export default function ListPage() {
   const router = useRouter();
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<ResumeItem | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     loadResumes();
@@ -76,6 +78,7 @@ export default function ListPage() {
       localStorage.removeItem('resumePhoto');
     }
     localStorage.setItem('currentResumeId', resume.id);
+    localStorage.setItem('cameFromList', 'true');
     router.push('/write');
   };
 
@@ -86,21 +89,88 @@ export default function ListPage() {
     setDeleteTarget(null);
   };
 
-  const handleShare = async (resume: ResumeItem) => {
-    const shareText = `이력서: ${resume.name}\n전화번호: ${resume.data.phone}\n이메일: ${resume.data.email}`;
+  const generateShareText = (resume: ResumeItem) => {
+    const data = resume.data;
+    let text = `[이력서]\n\n`;
+    text += `이름: ${data.name}\n`;
+    if (data.birthDate) text += `생년월일: ${data.birthDate}\n`;
+    text += `전화번호: ${data.phone}\n`;
+    if (data.email) text += `이메일: ${data.email}\n`;
+    if (data.address) text += `주소: ${data.address}\n`;
+    
+    if (data.experiences && data.experiences.length > 0) {
+      text += `\n[경력사항]\n`;
+      data.experiences.forEach(exp => {
+        text += `- ${exp.company} / ${exp.position} (${exp.period})\n`;
+        if (exp.duties) text += `  ${exp.duties}\n`;
+      });
+    }
+    
+    if (data.education && data.education.length > 0) {
+      text += `\n[학력사항]\n`;
+      data.education.forEach(edu => {
+        text += `- ${edu.school} ${edu.major} (${edu.period}) ${edu.degree}\n`;
+      });
+    }
+    
+    if (data.introduction) {
+      text += `\n[자기소개]\n${data.introduction}\n`;
+    }
+    
+    return text;
+  };
+
+  const handleShare = (resume: ResumeItem) => {
+    setShareTarget(resume);
+  };
+
+  const handleShareKakao = async () => {
+    if (!shareTarget) return;
+    const text = generateShareText(shareTarget);
     
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `${resume.name} 이력서`,
-          text: shareText,
+          title: `${shareTarget.data.name || ''} 이력서`,
+          text: text
         });
       } catch (e) {
         console.log('공유 취소');
       }
     } else {
-      await navigator.clipboard.writeText(shareText);
-      alert('이력서 정보가 복사되었습니다.');
+      const kakaoUrl = `https://story.kakao.com/share?text=${encodeURIComponent(text)}`;
+      window.open(kakaoUrl, '_blank');
+    }
+    setShareTarget(null);
+  };
+
+  const handleShareSMS = () => {
+    if (!shareTarget) return;
+    const text = generateShareText(shareTarget);
+    window.location.href = `sms:?body=${encodeURIComponent(text)}`;
+    setShareTarget(null);
+  };
+
+  const handleShareEmail = () => {
+    if (!shareTarget) return;
+    const text = generateShareText(shareTarget);
+    const subject = `${shareTarget.data.name || ''} 이력서`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+    setShareTarget(null);
+  };
+
+  const handleCopyText = async () => {
+    if (!shareTarget) return;
+    const text = generateShareText(shareTarget);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => {
+        setCopied(false);
+        setShareTarget(null);
+      }, 1500);
+    } catch (e) {
+      alert('복사에 실패했습니다.');
     }
   };
 
@@ -391,6 +461,172 @@ export default function ListPage() {
                   삭제
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {shareTarget && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}>
+            <div style={{
+              backgroundColor: 'white',
+              borderTopLeftRadius: '24px',
+              borderTopRightRadius: '24px',
+              padding: '24px',
+              width: '100%',
+              maxWidth: '500px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '20px', fontWeight: 'bold', color: '#1F2937' }}>공유하기</h3>
+                <button
+                  onClick={() => setShareTarget(null)}
+                  style={{
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '8px'
+                  }}
+                >
+                  <X size={24} color="#6B7280" />
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                <button
+                  onClick={handleShareKakao}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '12px'
+                  }}
+                >
+                  <div style={{
+                    width: '56px',
+                    height: '56px',
+                    backgroundColor: '#FEE500',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <MessageCircle size={28} color="#3C1E1E" />
+                  </div>
+                  <span style={{ fontSize: '13px', color: '#374151' }}>카카오톡</span>
+                </button>
+
+                <button
+                  onClick={handleShareSMS}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '12px'
+                  }}
+                >
+                  <div style={{
+                    width: '56px',
+                    height: '56px',
+                    backgroundColor: '#22C55E',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <MessageCircle size={28} color="white" />
+                  </div>
+                  <span style={{ fontSize: '13px', color: '#374151' }}>문자</span>
+                </button>
+
+                <button
+                  onClick={handleShareEmail}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '12px'
+                  }}
+                >
+                  <div style={{
+                    width: '56px',
+                    height: '56px',
+                    backgroundColor: '#3B82F6',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Mail size={28} color="white" />
+                  </div>
+                  <span style={{ fontSize: '13px', color: '#374151' }}>이메일</span>
+                </button>
+
+                <button
+                  onClick={handleCopyText}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '12px'
+                  }}
+                >
+                  <div style={{
+                    width: '56px',
+                    height: '56px',
+                    backgroundColor: '#6B7280',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {copied ? <Check size={28} color="white" /> : <Copy size={28} color="white" />}
+                  </div>
+                  <span style={{ fontSize: '13px', color: '#374151' }}>{copied ? '복사됨' : '복사하기'}</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShareTarget(null)}
+                style={{
+                  width: '100%',
+                  backgroundColor: '#F3F4F6',
+                  color: '#374151',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                취소
+              </button>
             </div>
           </div>
         )}

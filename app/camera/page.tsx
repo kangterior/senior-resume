@@ -9,55 +9,52 @@ export default function CameraPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [currentFacingMode, setCurrentFacingMode] = useState<'user' | 'environment'>('user');
   const [cameraError, setCameraError] = useState(false);
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const startCamera = async () => {
+  const stopAllTracks = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const startCamera = async (facingMode: 'user' | 'environment') => {
+    setIsLoading(true);
+    stopAllTracks();
+
     try {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-
       const newStream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: facingMode,
+          facingMode: { ideal: facingMode },
           width: { ideal: 480 },
           height: { ideal: 640 }
         },
         audio: false
       });
 
+      streamRef.current = newStream;
+
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         await videoRef.current.play();
-        setStream(newStream);
-        setIsStreaming(true);
         setCameraError(false);
       }
     } catch (error) {
       console.error('카메라 오류:', error);
       setCameraError(true);
-      setIsStreaming(false);
     }
-  };
-
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-      setIsStreaming(false);
-    }
+    setIsLoading(false);
   };
 
   useEffect(() => {
-    startCamera();
+    startCamera(currentFacingMode);
+    
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+      stopAllTracks();
     };
   }, []);
 
@@ -71,14 +68,14 @@ export default function CameraPage() {
       
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        if (facingMode === 'user') {
+        if (currentFacingMode === 'user') {
           ctx.translate(canvas.width, 0);
           ctx.scale(-1, 1);
         }
         ctx.drawImage(video, 0, 0);
         const imageData = canvas.toDataURL('image/jpeg', 0.9);
         setPhoto(imageData);
-        stopCamera();
+        stopAllTracks();
       }
     }
   };
@@ -90,55 +87,33 @@ export default function CameraPage() {
       reader.onloadend = () => {
         const result = reader.result as string;
         setPhoto(result);
-        stopCamera();
+        stopAllTracks();
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const switchCamera = async () => {
-    const newMode = facingMode === 'user' ? 'environment' : 'user';
-    setFacingMode(newMode);
-    
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
-
-    try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: newMode,
-          width: { ideal: 480 },
-          height: { ideal: 640 }
-        },
-        audio: false
-      });
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream;
-        await videoRef.current.play();
-        setStream(newStream);
-      }
-    } catch (error) {
-      console.error('카메라 전환 오류:', error);
-    }
+  const switchCamera = () => {
+    const newMode = currentFacingMode === 'user' ? 'environment' : 'user';
+    setCurrentFacingMode(newMode);
+    startCamera(newMode);
   };
 
   const retakePhoto = () => {
     setPhoto(null);
-    startCamera();
+    startCamera(currentFacingMode);
   };
 
   const savePhoto = () => {
     if (photo) {
       localStorage.setItem('resumePhoto', photo);
-      stopCamera();
+      stopAllTracks();
       router.push('/write');
     }
   };
 
   const handleBack = () => {
-    stopCamera();
+    stopAllTracks();
     router.push('/');
   };
 
@@ -223,8 +198,20 @@ export default function CameraPage() {
                   height: '400px',
                   borderRadius: '16px',
                   overflow: 'hidden',
-                  border: '4px solid white'
+                  border: '4px solid white',
+                  backgroundColor: '#1F2937'
                 }}>
+                  {isLoading && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      color: 'white'
+                    }}>
+                      카메라 로딩중...
+                    </div>
+                  )}
                   <video
                     ref={videoRef}
                     autoPlay
@@ -234,7 +221,7 @@ export default function CameraPage() {
                       width: '100%', 
                       height: '100%', 
                       objectFit: 'cover',
-                      transform: facingMode === 'user' ? 'scaleX(-1)' : 'none'
+                      transform: currentFacingMode === 'user' ? 'scaleX(-1)' : 'none'
                     }}
                   />
                 </div>
@@ -311,6 +298,7 @@ export default function CameraPage() {
                 <>
                   <button
                     onClick={switchCamera}
+                    disabled={isLoading}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -321,7 +309,8 @@ export default function CameraPage() {
                       color: 'white',
                       border: 'none',
                       borderRadius: '50%',
-                      cursor: 'pointer'
+                      cursor: isLoading ? 'not-allowed' : 'pointer',
+                      opacity: isLoading ? 0.5 : 1
                     }}
                   >
                     <RefreshCw size={24} />
@@ -329,6 +318,7 @@ export default function CameraPage() {
 
                   <button
                     onClick={capturePhoto}
+                    disabled={isLoading}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -339,7 +329,8 @@ export default function CameraPage() {
                       color: '#1F2937',
                       border: '4px solid #3B82F6',
                       borderRadius: '50%',
-                      cursor: 'pointer'
+                      cursor: isLoading ? 'not-allowed' : 'pointer',
+                      opacity: isLoading ? 0.5 : 1
                     }}
                   >
                     <Camera size={32} />
